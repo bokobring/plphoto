@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物实像素画生成器</title>
+    <style>
+        :root { --bg-color: #1a1a1a; --text-color: #e0e0e0; --primary-color: #007bff; --primary-hover: #0056b3; --input-bg: #2a2a2a; --border-color: #444; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 2rem; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .container { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 1.5rem; }
+        .card { background-color: var(--input-bg); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 1.5rem; }
+        .controls { display: flex; flex-direction: column; gap: 1.5rem; }
+        .control-group { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+        label, .label-text { font-weight: 500; white-space: nowrap; }
+        input[type="file"] { display: none; }
+        .file-label { background-color: #444; color: var(--text-color); padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; transition: background-color 0.2s; }
+        .file-label:hover { background-color: #555; }
+        #file-name { font-style: italic; color: #aaa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        input[type="range"] { flex-grow: 1; min-width: 150px; }
+        input[type="number"] { background-color: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 5px; padding: 0.6rem; width: 70px; text-align: center; }
+        input:disabled { opacity: 0.5; cursor: not-allowed; }
+        .info-text { font-size: 0.8rem; color: #888; flex-basis: 100%; margin-top: -1rem; }
+        button { background-color: var(--primary-color); color: white; border: none; padding: 0.7rem 1.5rem; border-radius: 5px; font-weight: bold; cursor: pointer; transition: background-color 0.2s; align-self: flex-start; }
+        button:hover { background-color: var(--primary-hover); }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        #result { width: 100%; height: 300px; background-color: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 8px; resize: vertical; font-family: "Courier New", Courier, monospace; font-size: 12px; line-height: 1.4; }
+        .output-header { display: flex; justify-content: space-between; align-items: center; }
+        #status { font-size: 0.9rem; color: #888; }
+        #preview-canvas { max-width: 100%; background-color: #111; border: 1px solid var(--border-color); image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
+        footer { margin-top: 2rem; font-size: 0.8rem; color: #666; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="controls">
+                <div class="control-group">
+                    <label for="image-upload" class="file-label">选择图片</label>
+                    <span id="file-name">未选择任何文件</span>
+                </div>
+                <input type="file" id="image-upload" accept="image/*">
+                
+                <div class="control-group">
+                    <label for="width-slider">宽度:</label>
+                    <input type="range" id="width-slider" value="48" min="8" max="512">
+                    <input type="number" id="width-input" value="48" min="8" max="512">
+                </div>
+
+                <div class="control-group">
+                    <input type="checkbox" id="custom-height-check">
+                    <label for="custom-height-check">自定义高度</label>
+                    <input type="number" id="height-input" value="48" min="8" max="512" disabled>
+                    <span class="label-text">自动高度:</span>
+                    <span id="auto-height-display">0</span>
+                </div>
+
+                <div class="control-group">
+                    <label for="aspect-ratio-correction">高宽比修正:</label>
+                    <input type="number" id="aspect-ratio-correction" value="0.69" min="0.1" max="2.0" step="0.01">
+                </div>
+                <span class="info-text">调整此值以避免图片被压扁或拉伸，在不同设备上可能有不同的合适值。值越小，图片越扁。</span>
+
+            </div>
+            <button id="generate-btn">生成</button>
+        </div>
+
+        <div class="card">
+            <div class="label-text">预览</div>
+            <canvas id="preview-canvas"></canvas>
+        </div>
+
+        <div class="card">
+            <div class="output-header">
+                <div class="label-text">生成结果 (已压缩)</div>
+                <span id="status"></span>
+            </div>
+            <textarea id="result" readonly></textarea>
+            <button id="copy-btn">复制到剪贴板</button>
+        </div>
+    </div>
+    
+    <footer>页面由复兴物实部署，灵感来源于海实李维嘉。</footer>
+
+    <canvas id="source-canvas" style="display: none;"></canvas>
+
+    <script>
+        const imageUpload = document.getElementById('image-upload');
+        const fileNameSpan = document.getElementById('file-name');
+        const widthSlider = document.getElementById('width-slider');
+        const widthInput = document.getElementById('width-input');
+        const correctionInput = document.getElementById('aspect-ratio-correction');
+        const customHeightCheck = document.getElementById('custom-height-check');
+        const heightInput = document.getElementById('height-input');
+        const autoHeightDisplay = document.getElementById('auto-height-display');
+        const generateBtn = document.getElementById('generate-btn');
+        const copyBtn = document.getElementById('copy-btn');
+        const resultTextarea = document.getElementById('result');
+        const statusSpan = document.getElementById('status');
+        const sourceCanvas = document.getElementById('source-canvas');
+        const sourceCtx = sourceCanvas.getContext('2d');
+        const previewCanvas = document.getElementById('preview-canvas');
+        const previewCtx = previewCanvas.getContext('2d', { willReadFrequently: true });
+
+        let selectedFile = null;
+        let originalImage = new Image();
+
+        const updateAutoHeight = () => {
+            if (originalImage.src && !customHeightCheck.checked) {
+                const targetWidth = parseInt(widthInput.value, 10);
+                const correctionFactor = parseFloat(correctionInput.value);
+                if (!isNaN(targetWidth) && !isNaN(correctionFactor)) {
+                    const imageAspectRatio = originalImage.height / originalImage.width;
+                    const autoHeight = Math.round(targetWidth * imageAspectRatio * correctionFactor);
+                    autoHeightDisplay.textContent = autoHeight > 0 ? autoHeight : '...';
+                    return autoHeight;
+                }
+            }
+            autoHeightDisplay.textContent = '...';
+            return 0;
+        };
+        
+        const toggleHeightControls = () => {
+            const useCustom = customHeightCheck.checked;
+            heightInput.disabled = !useCustom;
+            correctionInput.disabled = useCustom;
+            if(useCustom){
+                autoHeightDisplay.style.opacity = 0.5;
+                correctionInput.style.opacity = 0.5;
+            } else {
+                autoHeightDisplay.style.opacity = 1;
+                correctionInput.style.opacity = 1;
+            }
+            updateAutoHeight();
+        };
+
+        originalImage.onload = updateAutoHeight;
+        imageUpload.addEventListener('change', (event) => {
+            selectedFile = event.target.files[0];
+            if (selectedFile) {
+                fileNameSpan.textContent = selectedFile.name;
+                const reader = new FileReader();
+                reader.onload = (e) => { originalImage.src = e.target.result; };
+                reader.readAsDataURL(selectedFile);
+            } else {
+                fileNameSpan.textContent = '未选择任何文件';
+                originalImage.src = '';
+                autoHeightDisplay.textContent = '0';
+            }
+        });
+        
+        widthSlider.addEventListener('input', (e) => { widthInput.value = e.target.value; updateAutoHeight(); });
+        widthInput.addEventListener('input', (e) => { widthSlider.value = e.target.value; updateAutoHeight(); });
+        correctionInput.addEventListener('input', updateAutoHeight);
+        customHeightCheck.addEventListener('change', toggleHeightControls);
+
+        const updatePreview = (text, width, height) => {
+            if (!text || !width || !height) {
+                previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                return;
+            }
+            
+            previewCanvas.width = width;
+            previewCanvas.height = height;
+            previewCtx.clearRect(0, 0, width, height);
+            
+            const rows = text.replace(/<size=.*?>|<\/size>/g, '').split('\n');
+            const colorRegex = /<color=(#[0-9a-fA-F]{6})>([^<]*)<\/color>/g;
+
+            rows.forEach((line, y) => {
+                let x = 0;
+                let match;
+                while ((match = colorRegex.exec(line)) !== null) {
+                    const color = match[1];
+                    const chars = match[2];
+                    previewCtx.fillStyle = color;
+                    for (let i = 0; i < chars.length; i++) {
+                        previewCtx.fillRect(x, y, 1, 1);
+                        x++;
+                    }
+                }
+            });
+        };
+
+        generateBtn.addEventListener('click', () => {
+            if (!selectedFile) {
+                statusSpan.textContent = '错误：请选择图片';
+                return;
+            }
+
+            const targetWidth = parseInt(widthInput.value, 10);
+            let targetHeight;
+
+            if (customHeightCheck.checked) {
+                targetHeight = parseInt(heightInput.value, 10);
+                if (isNaN(targetHeight) || targetHeight <= 0) {
+                    statusSpan.textContent = '错误：自定义高度无效';
+                    return;
+                }
+            } else {
+                targetHeight = updateAutoHeight();
+                const correctionFactor = parseFloat(correctionInput.value);
+                if (isNaN(targetWidth) || targetWidth <= 0 || isNaN(targetHeight) || targetHeight <= 0 || isNaN(correctionFactor) || correctionFactor <= 0) {
+                    statusSpan.textContent = '错误：无效的宽度或修正系数';
+                    return;
+                }
+            }
+
+            statusSpan.textContent = '处理中...';
+            generateBtn.disabled = true;
+
+            sourceCanvas.width = targetWidth;
+            sourceCanvas.height = targetHeight;
+            sourceCtx.drawImage(originalImage, 0, 0, targetWidth, targetHeight);
+            
+            const imageData = sourceCtx.getImageData(0, 0, targetWidth, targetHeight).data;
+            const rows = [];
+            for (let y = 0; y < targetHeight; y++) {
+                let currentRowContent = '';
+                let lastHex = null;
+                for (let x = 0; x < targetWidth; x++) {
+                    const i = (y * targetWidth + x) * 4;
+                    const r = imageData[i], g = imageData[i+1], b = imageData[i+2];
+                    const currentHex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+                    if (currentHex === lastHex) {
+                        currentRowContent += '█';
+                    } else {
+                        if (lastHex !== null) currentRowContent += '</color>';
+                        currentRowContent += `<color=${currentHex}>█`;
+                        lastHex = currentHex;
+                    }
+                }
+                if (lastHex !== null) currentRowContent += '</color>';
+                rows.push(currentRowContent);
+            }
+            
+            const finalContent = rows.join('\n');
+            const outputText = `<size=12>${finalContent}</size>`;
+            resultTextarea.value = outputText;
+            statusSpan.textContent = `生成完毕！尺寸: ${targetWidth}x${targetHeight}`;
+            
+            updatePreview(outputText, targetWidth, targetHeight);
+            
+            generateBtn.disabled = false;
+        });
+
+        copyBtn.addEventListener('click', () => {
+            if (resultTextarea.value) {
+                navigator.clipboard.writeText(resultTextarea.value)
+                    .then(() => { statusSpan.textContent = '已复制！'; })
+                    .catch(() => { statusSpan.textContent = '复制失败'; });
+            }
+        });
+
+        toggleHeightControls();
+    </script>
+</body>
+</html>
