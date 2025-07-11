@@ -55,6 +55,13 @@
                 </div>
 
                 <div class="control-group">
+                    <label for="size-slider">图片大小:</label>
+                    <input type="range" id="size-slider" value="6" min="1" max="30">
+                    <input type="number" id="size-input" value="6" min="1" max="30">
+                </div>
+                <span class="info-text">调整此值以调整图片在物实显示的大小，宽度越大，这个值应该越小。</span>
+
+                <div class="control-group">
                     <label for="aspect-ratio-correction">高宽比修正:</label>
                     <input type="number" id="aspect-ratio-correction" value="0.69" min="0.1" max="2.0" step="0.01">
                 </div>
@@ -92,6 +99,8 @@
         const customHeightCheck = document.getElementById('custom-height-check');
         const heightInput = document.getElementById('height-input');
         const autoHeightDisplay = document.getElementById('auto-height-display');
+        const sizeSlider = document.getElementById('size-slider');
+        const sizeInput = document.getElementById('size-input');
         const generateBtn = document.getElementById('generate-btn');
         const copyBtn = document.getElementById('copy-btn');
         const resultTextarea = document.getElementById('result');
@@ -153,6 +162,9 @@
         correctionInput.addEventListener('input', updateAutoHeight);
         customHeightCheck.addEventListener('change', toggleHeightControls);
 
+        sizeSlider.addEventListener('input', (e) => { sizeInput.value = e.target.value; });
+        sizeInput.addEventListener('input', (e) => { sizeSlider.value = e.target.value; });
+
         const updatePreview = (text, width, height) => {
             if (!text || !width || !height) {
                 previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
@@ -204,6 +216,13 @@
                     return;
                 }
             }
+            
+            const displaySize = parseInt(sizeInput.value, 10);
+            if (isNaN(displaySize) || displaySize < 1 || displaySize > 30) {
+                statusSpan.textContent = '错误：无效的图片大小值';
+                generateBtn.disabled = false;
+                return;
+            }
 
             statusSpan.textContent = '处理中...';
             generateBtn.disabled = true;
@@ -232,13 +251,14 @@
                 if (lastHex !== null) currentRowContent += '</color>';
                 rows.push(currentRowContent);
             }
+            rows.push(`<color=#ffffff>${'█'.repeat(targetWidth)}</color>`);
             
             const finalContent = rows.join('\n');
-            const outputText = `<味ize=1>${finalContent}</size>`;
+            const outputText = `<味ize=${displaySize}>${finalContent}</size>`;
             resultTextarea.value = outputText;
             statusSpan.textContent = `生成完毕！尺寸: ${targetWidth}x${targetHeight}`;
             
-            updatePreview(outputText, targetWidth, targetHeight);
+            updatePreview(outputText, targetWidth, targetHeight + 1);
             
             generateBtn.disabled = false;
         });
