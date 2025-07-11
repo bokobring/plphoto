@@ -73,6 +73,8 @@
                         <option value="none">不压缩</option>
                         <option value="low-color">低彩色压缩</option>
                         <option value="grayscale">黑白压缩</option>
+                        <option value="binary">01压缩</option>
+                        <option value="8-color">8色压缩</option>
                     </select>
                 </div>
                 <span class="info-text" id="color-mode-info"></span>
@@ -125,44 +127,6 @@
 
         let selectedFile = null;
         let originalImage = new Image();
-
-        const PALETTE_16_COLORS = [
-            { r: 0x00, g: 0x00, b: 0x00 },   
-            { r: 0x80, g: 0x00, b: 0x00 },   
-            { r: 0x00, g: 0x80, b: 0x00 },   
-            { r: 0x80, g: 0x80, b: 0x00 },   
-            { r: 0x00, g: 0x00, b: 0x80 },   
-            { r: 0x80, g: 0x00, b: 0x80 },   
-            { r: 0x00, g: 0x80, b: 0x80 },   
-            { r: 0xC0, g: 0xC0, b: 0xC0 },   
-            { r: 0x80, g: 0x80, b: 0x80 },   
-            { r: 0xFF, g: 0x00, b: 0x00 },   
-            { r: 0x00, g: 0xFF, b: 0x00 },   
-            { r: 0xFF, g: 0xFF, b: 0x00 },   
-            { r: 0x00, g: 0x00, b: 0xFF },   
-            { r: 0xFF, g: 0x00, b: 0xFF },   
-            { r: 0x00, g: 0xFF, b: 0xFF },   
-            { r: 0xFF, g: 0xFF, b: 0xFF }    
-        ];
-
-        function getClosestPaletteColor(r, g, b, palette) {
-            let minDistanceSq = Infinity;
-            let closestColor = { r, g, b }; 
-
-            for (let i = 0; i < palette.length; i++) {
-                const pColor = palette[i];
-                const dr = r - pColor.r;
-                const dg = g - pColor.g;
-                const db = b - pColor.b;
-                const distanceSq = dr * dr + dg * dg + db * db;
-
-                if (distanceSq < minDistanceSq) {
-                    minDistanceSq = distanceSq;
-                    closestColor = pColor;
-                }
-            }
-            return closestColor;
-        }
 
         const updateAutoHeight = () => {
             if (originalImage.src && !customHeightCheck.checked) {
@@ -219,9 +183,13 @@
         colorModeSelect.addEventListener('change', () => {
             const selectedMode = colorModeSelect.value;
             if (selectedMode === 'low-color') {
-                colorModeInfoSpan.textContent = '低彩色压缩共可显示16种颜色';
+                colorModeInfoSpan.textContent = '低彩色压缩共可显示4096种颜色';
             } else if (selectedMode === 'grayscale') {
-                colorModeInfoSpan.textContent = '黑白压缩会将图片黑白化';
+                colorModeInfoSpan.textContent = '将图片转换为灰度图';
+            } else if (selectedMode === 'binary') {
+                colorModeInfoSpan.textContent = '会将图片黑白化（非黑即白）';
+            } else if (selectedMode === '8-color') {
+                colorModeInfoSpan.textContent = '将图片颜色压缩为红绿蓝青品黄黑白共8种纯色';
             } else {
                 colorModeInfoSpan.textContent = '';
             }
@@ -309,11 +277,19 @@
 
                     if (selectedMode === 'grayscale') {
                         const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                        r = gray; g = gray; b = gray;
+                    } else if (selectedMode === 'binary') {
+                        const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
                         const bw = gray > 127 ? 255 : 0;
                         r = bw; g = bw; b = bw;
+                    } else if (selectedMode === '8-color') {
+                        r = (r >= 128) ? 255 : 0;
+                        g = (g >= 128) ? 255 : 0;
+                        b = (b >= 128) ? 255 : 0;
                     } else if (selectedMode === 'low-color') {
-                        const closest = getClosestPaletteColor(r, g, b, PALETTE_16_COLORS);
-                        r = closest.r; g = closest.g; b = closest.b;
+                        r = Math.floor(r / 16) * 17;
+                        g = Math.floor(g / 16) * 17;
+                        b = Math.floor(b / 16) * 17;
                     }
 
                     const currentHex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
