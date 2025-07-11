@@ -67,6 +67,16 @@
                 </div>
                 <span class="info-text">调整此值以避免图片被压扁或拉伸，在不同设备上可能有不同的合适值。值越小，图片越扁。</span>
 
+                <div class="control-group">
+                    <label for="color-mode">压缩模式:</label>
+                    <select id="color-mode">
+                        <option value="none">不压缩</option>
+                        <option value="low-color">低彩色压缩</option>
+                        <option value="grayscale">黑白压缩</option>
+                    </select>
+                </div>
+                <span class="info-text" id="color-mode-info"></span>
+
             </div>
             <button id="generate-btn">生成</button>
         </div>
@@ -109,9 +119,50 @@
         const sourceCtx = sourceCanvas.getContext('2d');
         const previewCanvas = document.getElementById('preview-canvas');
         const previewCtx = previewCanvas.getContext('2d', { willReadFrequently: true });
+        
+        const colorModeSelect = document.getElementById('color-mode');
+        const colorModeInfoSpan = document.getElementById('color-mode-info');
 
         let selectedFile = null;
         let originalImage = new Image();
+
+        const PALETTE_16_COLORS = [
+            { r: 0x00, g: 0x00, b: 0x00 },   
+            { r: 0x80, g: 0x00, b: 0x00 },   
+            { r: 0x00, g: 0x80, b: 0x00 },   
+            { r: 0x80, g: 0x80, b: 0x00 },   
+            { r: 0x00, g: 0x00, b: 0x80 },   
+            { r: 0x80, g: 0x00, b: 0x80 },   
+            { r: 0x00, g: 0x80, b: 0x80 },   
+            { r: 0xC0, g: 0xC0, b: 0xC0 },   
+            { r: 0x80, g: 0x80, b: 0x80 },   
+            { r: 0xFF, g: 0x00, b: 0x00 },   
+            { r: 0x00, g: 0xFF, b: 0x00 },   
+            { r: 0xFF, g: 0xFF, b: 0x00 },   
+            { r: 0x00, g: 0x00, b: 0xFF },   
+            { r: 0xFF, g: 0x00, b: 0xFF },   
+            { r: 0x00, g: 0xFF, b: 0xFF },   
+            { r: 0xFF, g: 0xFF, b: 0xFF }    
+        ];
+
+        function getClosestPaletteColor(r, g, b, palette) {
+            let minDistanceSq = Infinity;
+            let closestColor = { r, g, b }; 
+
+            for (let i = 0; i < palette.length; i++) {
+                const pColor = palette[i];
+                const dr = r - pColor.r;
+                const dg = g - pColor.g;
+                const db = b - pColor.b;
+                const distanceSq = dr * dr + dg * dg + db * db;
+
+                if (distanceSq < minDistanceSq) {
+                    minDistanceSq = distanceSq;
+                    closestColor = pColor;
+                }
+            }
+            return closestColor;
+        }
 
         const updateAutoHeight = () => {
             if (originalImage.src && !customHeightCheck.checked) {
@@ -165,6 +216,18 @@
         sizeSlider.addEventListener('input', (e) => { sizeInput.value = e.target.value; });
         sizeInput.addEventListener('input', (e) => { sizeSlider.value = e.target.value; });
 
+        colorModeSelect.addEventListener('change', () => {
+            const selectedMode = colorModeSelect.value;
+            if (selectedMode === 'low-color') {
+                colorModeInfoSpan.textContent = '低彩色压缩共可显示16种颜色';
+            } else if (selectedMode === 'grayscale') {
+                colorModeInfoSpan.textContent = '黑白压缩会将图片黑白化';
+            } else {
+                colorModeInfoSpan.textContent = '';
+            }
+        });
+        colorModeSelect.dispatchEvent(new Event('change'));
+
         const updatePreview = (text, width, height) => {
             if (!text || !width || !height) {
                 previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
@@ -175,8 +238,8 @@
             previewCanvas.height = height;
             previewCtx.clearRect(0, 0, width, height);
             
-            const rows = text.replace(/<size=.*?>|<\/size>/g, '').split('\n');
-            const colorRegex = /<color=(#[0-9a-fA-F]{6})>([^<]*)<\/color>/g;
+            const rows = text.replace(/<味ize=.*?>|<\/size>/g, '').split('\n');
+            const colorRegex = /<color=(#[0-9a-fA-F]{6})>([^<]*)<\/a>/g;
 
             rows.forEach((line, y) => {
                 let x = 0;
@@ -231,19 +294,34 @@
             sourceCanvas.height = targetHeight;
             sourceCtx.drawImage(originalImage, 0, 0, targetWidth, targetHeight);
             
-            const imageData = sourceCtx.getImageData(0, 0, targetWidth, targetHeight).data;
+            const imageData = sourceCtx.getImageData(0, 0, targetWidth, targetHeight);
+            const data = imageData.data;
+
+            const selectedMode = colorModeSelect.value;
+
             const rows = [];
             for (let y = 0; y < targetHeight; y++) {
                 let currentRowContent = '';
                 let lastHex = null;
                 for (let x = 0; x < targetWidth; x++) {
                     const i = (y * targetWidth + x) * 4;
-                    const r = imageData[i], g = imageData[i+1], b = imageData[i+2];
+                    let r = data[i], g = data[i+1], b = data[i+2];
+
+                    if (selectedMode === 'grayscale') {
+                        const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                        const bw = gray > 127 ? 255 : 0;
+                        r = bw; g = bw; b = bw;
+                    } else if (selectedMode === 'low-color') {
+                        const closest = getClosestPaletteColor(r, g, b, PALETTE_16_COLORS);
+                        r = closest.r; g = closest.g; b = closest.b;
+                    }
+
                     const currentHex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+                    
                     if (currentHex === lastHex) {
                         currentRowContent += '█';
                     } else {
-                        if (lastHex !== null) currentRowContent += '</color>';
+                        if (lastHex !== null) currentRowContent += '</a>';
                         currentRowContent += `<color=${currentHex}>█`;
                         lastHex = currentHex;
                     }
